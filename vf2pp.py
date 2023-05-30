@@ -149,25 +149,26 @@ class VF2PP:
         if call_limit <= 0 and call_limit != -1:
             raise ValueError("Limit must be -1 or a nonzero integer")
         
-        return self._match(node_order, call_limit=call_limit)
+        # Clear data structures
+        self._gmaps.clear()
+        self._covg1.clear()
+        self._covg2.clear()
+
+        return self._match(GraphMap(), node_order, 0, call_limit)
 
     def _match(
         self,
+        gmap: GraphMap,
         node_order: Optional[Sequence[int]] = None,
         depth: int = 0,
-        gmap: Optional[GraphMap] = None,
         call_limit: int = 1
     ) -> int:
-        
-        if not gmap:
-            self._gmaps.clear()
-            gmap = GraphMap()
 
         if depth == len(self._G1):
             self._gmaps.append(gmap.copy())
             return 1
         
-        n_maps = 0 # Number of complete mappings found
+        n_maps = 0 # number of complete mappings found
         
         if node_order is not None:
             cands1 = [node_order[depth]]
@@ -199,7 +200,7 @@ class VF2PP:
                 self._covg1.incr([cand1] + uncovered_neighbors1)
                 self._covg2.incr([cand2] + uncovered_neighbors2)
 
-                n_maps += self._match(node_order, depth + 1, gmap, call_limit)
+                n_maps += self._match(gmap, node_order, depth + 1, call_limit)
                 
                 # Restore mapping and coverages: O(deg(cand1) + deg(cand2))
                 del gmap[self._qumap[cand1]]

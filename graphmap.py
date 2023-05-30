@@ -1,4 +1,3 @@
-from math import ceil, log10
 from qiskit.circuit import Qubit
 from qiskit.transpiler import Layout
 from typing import Optional, Union
