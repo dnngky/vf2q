@@ -134,7 +134,7 @@ class VF2PP:
         """
         return len(set(self._G1.neighbors(node)).intersection(set(node_order)))
 
-    def match(
+    def run(
         self,
         node_order: Optional[Sequence[int]] = None,
         call_limit: int = 1
@@ -254,12 +254,12 @@ class VF2PP:
         visited = defaultdict(lambda: False)
 
         for node in self._G1.node_indices():
-            if not (visited[node] or self._verify(gmap, visited, node)):
+            if not (visited[node] or self._check(gmap, visited, node)):
                 return False
         
         return True
     
-    def _verify(self, gmap: GraphMap, visited: MutableMapping[int, bool], node: int) -> bool:
+    def _check(self, gmap: GraphMap, visited: MutableMapping[int, bool], node: int) -> bool:
         
         visited[node] = True
 
@@ -268,7 +268,7 @@ class VF2PP:
                 return False
             if not self._G2.has_edge(gmap[self._qumap[node]], gmap[self._qumap[neighbor]]):
                 return False
-            if not (visited[neighbor] or self._verify(gmap, visited, neighbor)):
+            if not (visited[neighbor] or self._check(gmap, visited, neighbor)):
                 return False
         
         return True

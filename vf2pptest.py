@@ -57,7 +57,7 @@ if __name__ == "__main__":
             print(f"vf2_runtime: {end - start}")
 
         start = time.time()
-        n_maps = vf2pp.match(vf2pp.matching_order(), call_limit=1)
+        n_maps = vf2pp.run(vf2pp.matching_order(), call_limit=1)
         end = time.time()
         if (end - start) > max_vf2pp_runtime[0]:
             max_vf2pp_runtime[0] = (end - start)
