@@ -7,7 +7,6 @@ from coveragetable import CoverageTable
 from qiskit.circuit import QuantumCircuit
 from qiskit.transpiler import Layout
 
-import itertools as it
 import rustworkx as rx
 
 class VF2PP:
@@ -34,8 +33,8 @@ class VF2PP:
             raise ValueError("Circuit width exceeds archgraph width")
         
         self._gmaps = list()
-        self._covg1 = CoverageTable()
-        self._covg2 = CoverageTable()
+        self._covg1 = CoverageTable(len(self._G1))
+        self._covg2 = CoverageTable(len(self._G2))
     
     @property
     def circgraph(self) -> rx.PyGraph:
@@ -83,7 +82,7 @@ class VF2PP:
         :return: The matching order for G1.
         """
         node_order = list()
-        visited = defaultdict(lambda: False)
+        visited = defaultdict(bool)
         max_deg = max([self._G1.degree(u) for u in self._G1.node_indices()])
         
         # VF2++ Algorithm 2
@@ -136,13 +135,13 @@ class VF2PP:
 
     def run(
         self,
-        node_order: Optional[Sequence[int]] = None,
+        node_order: Sequence[int],
         call_limit: int = 1
     ) -> int:
         """
-        Performs VF2 on G1 and G2 according to the matching order, if provided. Halts
-        after the specified (`call_limit`) number of whole mappings have been found.
-        If `limit` is set to -1, then all complete mappings are searched (generally
+        Performs VF2 on G1 and G2 according to the matching order, and halts after
+        the specified (`call_limit`) number of complete mappings have been found. If
+        `call_limit` is set to -1, then all complete mappings are searched (generally
         not recommended).
         :return: The number of consistent whole mappings found.
         """
@@ -159,7 +158,7 @@ class VF2PP:
     def _match(
         self,
         gmap: GraphMap,
-        node_order: Optional[Sequence[int]] = None,
+        node_order: Sequence[int],
         depth: int = 0,
         call_limit: int = 1
     ) -> int:
@@ -169,21 +168,9 @@ class VF2PP:
             return 1
         
         n_maps = 0 # number of complete mappings found
-        
-        if node_order is not None:
-            cands1 = [node_order[depth]]
-        else:
-            cands1 = [
-                u for u in self._G1.node_indices() if \
-                    (self._covg1[u] and gmap[self._qumap[u]] is None) or not self._covg1
-            ]
-            cands1.sort(key=lambda u: self._G1.degree(u), reverse=True) # sort by degree
-        
-        cands2 = [
-            u for u in self._G2.node_indices() if \
-                (self._covg2[u] and gmap[u] is None) or not self._covg2
-        ]
-        for cand1, cand2 in it.product(cands1, cands2):
+        cand1 = node_order[depth]
+
+        for cand2 in self._covg2.cands(gmap):
             
             # Filter out infeasible candidates: O(deg(cand1) * deg(cand2))
             if self._cons(gmap, cand1, cand2) and not self._cut(gmap, cand1, cand2):
@@ -199,6 +186,8 @@ class VF2PP:
                 gmap[self._qumap[cand1]] = cand2
                 self._covg1.incr([cand1] + uncovered_neighbors1)
                 self._covg2.incr([cand2] + uncovered_neighbors2)
+                self._covg1.cover()
+                self._covg2.cover()
 
                 n_maps += self._match(gmap, node_order, depth + 1, call_limit)
                 
@@ -206,6 +195,8 @@ class VF2PP:
                 del gmap[self._qumap[cand1]]
                 self._covg1.decr([cand1] + uncovered_neighbors1)
                 self._covg2.decr([cand2] + uncovered_neighbors2)
+                self._covg1.uncover()
+                self._covg2.uncover()
 
                 # If call_limit == -1, this will never be true
                 if len(self._gmaps) >= (call_limit if call_limit != -1 else len(self._gmaps) + 1):
@@ -229,12 +220,11 @@ class VF2PP:
     
     def _cut(self, gmap: GraphMap, cand1: int, cand2: int) -> bool:
         """
-        Returns True if cand2 has fewer neighbours within G2's coverage than those of cand1, or
-        cand2 has fewer neighbours beyond G2's coverage than those of cand1.
+        Returns True if cand2 has fewer neighbours within G2's candidates than those of cand1.
         :return: True if the above holds.
         """
-        within_neighbors1 = [v for v in self._G1.neighbors(cand1) if self._covg1[v] > 0 and gmap[self._qumap[v]] is None]
-        within_neighbors2 = [v for v in self._G2.neighbors(cand2) if self._covg2[v] > 0 and gmap[v] is None]
+        within_neighbors1 = [v for v in self._G1.neighbors(cand1) if self._covg1.is_cand(v, gmap, self._qumap)]
+        within_neighbors2 = [v for v in self._G2.neighbors(cand2) if self._covg2.is_cand(v, gmap)]
         if len(within_neighbors2) < len(within_neighbors1):
             return True
 
@@ -251,7 +241,7 @@ class VF2PP:
         Verifies a mapping.
         :return: True if the mapping is complete and consistent.
         """
-        visited = defaultdict(lambda: False)
+        visited = defaultdict(bool)
 
         for node in self._G1.node_indices():
             if not (visited[node] or self._check(gmap, visited, node)):

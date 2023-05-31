@@ -44,7 +44,7 @@ if __name__ == "__main__":
         vf2pp = VF2PP(circuit, sycamore54())
 
         if INCLUDE_VF2:
-        
+            
             start = time.time()
             vf2_map = rx.vf2_mapping(vf2pp.archgraph, vf2pp.circgraph, subgraph=True, induced=False)
             end = time.time()
@@ -56,8 +56,10 @@ if __name__ == "__main__":
             print(f"vf2_mapping: {next(vf2_map)}")
             print(f"vf2_runtime: {end - start}")
 
+        node_order = vf2pp.matching_order()
+        print(f"node_order: {node_order}")
         start = time.time()
-        n_maps = vf2pp.run(vf2pp.matching_order(), call_limit=1)
+        n_maps = vf2pp.run(node_order, call_limit=1)
         end = time.time()
         if (end - start) > max_vf2pp_runtime[0]:
             max_vf2pp_runtime[0] = (end - start)
