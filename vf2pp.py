@@ -173,35 +173,39 @@ class VF2PP:
         for cand2 in self._covg2.cands(gmap):
             
             # Filter out infeasible candidates: O(deg(cand1) * deg(cand2))
-            if self._cons(gmap, cand1, cand2) and not self._cut(gmap, cand1, cand2):
-                
-                assert (gmap[self._qumap[cand1]] is None) and (gmap[cand2] is None), \
-                    "Attempt to map to an already-mapped node!"
+            if not self._cons(gmap, cand1, cand2):
+                continue
 
-                # Obtain uncovered neighbours of cand1 and cand2: O(deg(cand1) + deg(cand2))
-                uncovered_neighbors1 = [v for v in self._G1.neighbors(cand1) if gmap[self._qumap[v]] is None]
-                uncovered_neighbors2 = [v for v in self._G2.neighbors(cand2) if gmap[v] is None]
+            uncovered_ngbrs1 = [v for v in self._G1.neighbors(cand1) if gmap[self._qumap[v]] is None]
+            uncovered_ngbrs2 = [v for v in self._G2.neighbors(cand2) if gmap[v] is None]
 
-                # Extend mapping and coverages: O(deg(cand1) + deg(cand2))
-                gmap[self._qumap[cand1]] = cand2
-                self._covg1.incr([cand1] + uncovered_neighbors1)
-                self._covg2.incr([cand2] + uncovered_neighbors2)
-                self._covg1.cover()
-                self._covg2.cover()
+            # Prune search tree with cutting rule: O(deg(cand1) + deg(cand2))
+            if self._cut(uncovered_ngbrs1, uncovered_ngbrs2):
+                continue
 
-                n_maps += self._match(gmap, node_order, depth + 1, call_limit)
-                
-                # Restore mapping and coverages: O(deg(cand1) + deg(cand2))
-                del gmap[self._qumap[cand1]]
-                self._covg1.decr([cand1] + uncovered_neighbors1)
-                self._covg2.decr([cand2] + uncovered_neighbors2)
-                self._covg1.uncover()
-                self._covg2.uncover()
+            assert (gmap[self._qumap[cand1]] is None) and (gmap[cand2] is None), \
+                "Attempt to map to an already-mapped node!"
 
-                # If call_limit == -1, this will never be true
-                if len(self._gmaps) >= (call_limit if call_limit != -1 else len(self._gmaps) + 1):
-                    return n_maps
-        
+            # Extend mapping and coverages: O(deg(cand1) + deg(cand2))
+            gmap[self._qumap[cand1]] = cand2
+            self._covg1.incr([cand1] + uncovered_ngbrs1)
+            self._covg2.incr([cand2] + uncovered_ngbrs2)
+            self._covg1.cover()
+            self._covg2.cover()
+
+            n_maps += self._match(gmap, node_order, depth + 1, call_limit)
+
+            # Restore mapping and coverages: O(deg(cand1) + deg(cand2))
+            del gmap[self._qumap[cand1]]
+            self._covg1.decr([cand1] + uncovered_ngbrs1)
+            self._covg2.decr([cand2] + uncovered_ngbrs2)
+            self._covg1.uncover()
+            self._covg2.uncover()
+
+            # If call_limit == -1, this will never be true
+            if len(self._gmaps) >= (call_limit if call_limit != -1 else len(self._gmaps) + 1):
+                return n_maps
+
         return n_maps
     
     def _cons(self, gmap: GraphMap, cand1: int, cand2: int) -> bool:
@@ -218,22 +222,12 @@ class VF2PP:
         
         return True
     
-    def _cut(self, gmap: GraphMap, cand1: int, cand2: int) -> bool:
+    def _cut(self, uncovered_ngbrs1: Sequence[int], uncovered_ngbrs2: Sequence[int]) -> bool:
         """
         Returns True if cand2 has fewer uncovered neighbours than those of cand1.
         :return: True if the above holds.
         """
-        # within_neighbors1 = [v for v in self._G1.neighbors(cand1) if self._covg1.is_cand(v, gmap, self._qumap)]
-        # within_neighbors2 = [v for v in self._G2.neighbors(cand2) if self._covg2.is_cand(v, gmap)]
-        # if len(within_neighbors2) < len(within_neighbors1):
-        #     return True
-
-        uncovered_neighbors1 = [v for v in self._G1.neighbors(cand1) if gmap[self._qumap[v]] is None]
-        uncovered_neighbors2 = [v for v in self._G2.neighbors(cand2) if gmap[v] is None]
-        if len(uncovered_neighbors2) < len(uncovered_neighbors1):
-            return True
-
-        return False
+        return len(uncovered_ngbrs2) < len(uncovered_ngbrs1)
 
     def verify(self, gmap: GraphMap) -> bool:
         """

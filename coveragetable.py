@@ -70,18 +70,6 @@ class CoverageTable:
         for node in nodes:
             self.decr(node)
     
-    def is_cand(self, node: int, gmap: GraphMap, qumap: Optional[Layout] = None) -> bool:
-        """
-        Returns True if the given node is a candidate.
-        :return: True if the given node is a candidate.
-        """
-        if not self._size: # If the mapping is currently empty, every node is a candidate
-            return True
-        is_uncovered = gmap[node] is None
-        if qumap:
-            is_uncovered = gmap[qumap[node]] is None
-        return self._level[node] and is_uncovered
-    
     def cands(self, gmap: GraphMap, qumap: Optional[Layout] = None) -> Generator[int, None, None]:
         """
         Returns an iterator through each candidate.
@@ -90,7 +78,8 @@ class CoverageTable:
         for node in range(self._num_nodes):
             if not self._size and not self._level[node]:
                 yield node
-            if self.is_cand(node, gmap, qumap):
+            is_uncovered = (gmap[qumap[node]] if qumap else gmap[node]) is None
+            if self._level[node] and is_uncovered:
                 yield node
 
     def clear(self) -> None:
