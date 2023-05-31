@@ -6,13 +6,11 @@ from typing import Generator, Optional
 
 class CoverageTable:
     _level: defaultdict[int, int]
-    _num_nodes: int
     _size: int
 
-    def __init__(self, num_nodes: int):
+    def __init__(self):
         super().__init__()
         self._level = defaultdict(int)
-        self._num_nodes = num_nodes
         self._size = 0
 
     def __len__(self) -> int:
@@ -69,18 +67,6 @@ class CoverageTable:
     def _(self, nodes: list) -> None:
         for node in nodes:
             self.decr(node)
-    
-    def cands(self, gmap: GraphMap, qumap: Optional[Layout] = None) -> Generator[int, None, None]:
-        """
-        Returns an iterator through each candidate.
-        :return: An iterator through each candidate.
-        """
-        for node in range(self._num_nodes):
-            if not self._size and not self._level[node]:
-                yield node
-            is_uncovered = (gmap[qumap[node]] if qumap else gmap[node]) is None
-            if self._level[node] and is_uncovered:
-                yield node
 
     def clear(self) -> None:
         self._level.clear()

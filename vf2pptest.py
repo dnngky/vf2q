@@ -8,37 +8,35 @@ import time
 if __name__ == "__main__":
 
     """
-    Noticeable concerns:
-    o------CIRCUIT------o----CUT-RULE-2----o------RX-VF2------o
-    | 54QBT_05CYC_QSE_1 | Passes*          | Passes           |
-    | 54QBT_05CYC_QSE_2 | Passes           | Takes too long+  |
-    | 54QBT_05CYC_QSE_3 | False negative^  | Passes           |
-    | 54QBT_05CYC_QSE_9 | Takes too long+  | Passes           |
+    Noticeable findings:
+    o------CIRCUIT------o------VF2-PP------o------RX-VF2------o
+    | 54QBT_05CYC_QSE_2 | pass             | timeout^         |
+    | 54QBT_05CYC_QSE_3 | hard pass*       | timeout^         |
+    | 54QBT_05CYC_QSE_5 | pass             | hard pass*       |
+    | 54QBT_05CYC_QSE_9 | pass             | hard pass*       |
     o-------------------o------------------o------------------o
-    * within 40-60 seconds
-    ^ within 1-3 minutes
-    + over 5 minutes
-
-    However, these results are non-deterministic (with the exception of RX-VF2),
-    and seem to depend on the generated matching order. RX-VF2 is generally faster.
+    * halted within 600 seconds, but after 5 seconds.
+    ^ did not halt within 600 seconds.
     """
 
     path = "./benchmark/BNTF/"
 
-    max_vf2_runtime = [0., None]
-    max_vf2pp_runtime = [0., None]
+    max_vf2_runtime = [-1., None]
+    max_vf2pp_runtime = [-1., None]
     total_vf2_runtime = 0.
     total_vf2pp_runtime = 0.
     num_files = 0
 
+    INCLUDE_VF2PP = True # Toggle this to include VF2++
+    INCLUDE_RXVF2 = True # Toggle this to include rustworkx's VF2
     VERIFY_MAPPING = True # Toggle this to enable/disable VF2PP mapping verification
-    INCLUDE_VF2 = True # Toggle this to include rustworkx's vf2_mapping() algorithm
+    PRINT_MAPPING = False # Toggle this to print mappings
     
     for filename in os.listdir(path):
         
-        if filename == "54QBT_05CYC_QSE_1.qasm": continue
         if filename == "54QBT_05CYC_QSE_2.qasm": continue
         if filename == "54QBT_05CYC_QSE_3.qasm": continue
+        if filename == "54QBT_05CYC_QSE_5.qasm": continue
         if filename == "54QBT_05CYC_QSE_9.qasm": continue
 
         print(filename)
@@ -46,47 +44,57 @@ if __name__ == "__main__":
         circuit = QuantumCircuit.from_qasm_file(path + filename)
         vf2pp = VF2PP(circuit, sycamore54())
 
-        if INCLUDE_VF2:
+        if INCLUDE_RXVF2:
             
             start = time.time()
-            vf2_map = rx.vf2_mapping(vf2pp.archgraph, vf2pp.circgraph, subgraph=True, induced=False)
+            is_embeddable = rx.is_subgraph_isomorphic(vf2pp.archgraph, vf2pp.circgraph, induced=False)
             end = time.time()
             if (end - start) > max_vf2_runtime[0]:
                 max_vf2_runtime[0] = (end - start)
                 max_vf2_runtime[1] = filename
             total_vf2_runtime += (end - start)
 
-            print(f"vf2_mapping: {next(vf2_map)}")
-            print(f"vf2_runtime: {end - start}")
+            if is_embeddable:
+                vf2_map = rx.vf2_mapping(vf2pp.archgraph, vf2pp.circgraph, subgraph=True, induced=False)
+                print("rx-vf2_embeddable: True")
+                if PRINT_MAPPING:
+                    print(f"rx-vf2_mapping: {next(vf2_map)}")
+            else:
+                print("rx-vf2_embeddable: False")
+                raise ValueError("rx-vf2: mapping is not embeddable")
+            print(f"rx-vf2_runtime: {end - start}")
 
-        node_order = vf2pp.matching_order()
-        print(f"node_order: {node_order}")
-        start = time.time()
-        n_maps = vf2pp.run(node_order, call_limit=1)
-        end = time.time()
-        if (end - start) > max_vf2pp_runtime[0]:
-            max_vf2pp_runtime[0] = (end - start)
-            max_vf2pp_runtime[1] = filename
-        total_vf2pp_runtime += (end - start)
-        vf2pp_map = next(vf2pp.mappings())
+        if INCLUDE_VF2PP:
 
-        print(f"vf2pp_mapping: {vf2pp_map}")
-        print(f"vf2pp_runtime: {end - start}")
+            start = time.time()
+            vf2pp.run(nmap_limit=1)
+            end = time.time()
+            if (end - start) > max_vf2pp_runtime[0]:
+                max_vf2pp_runtime[0] = (end - start)
+                max_vf2pp_runtime[1] = filename
+            total_vf2pp_runtime += (end - start)
 
-        if VERIFY_MAPPING:
-            if not vf2pp.verify(vf2pp_map):
-                raise ValueError("Mapping is not correct!")
-            print("[MAPPING VERIFIED]")
+            if vf2pp.is_embeddable():
+                vf2pp_map = next(vf2pp.mappings())
+                print("vf2-pp_embeddable: True")
+                if PRINT_MAPPING:
+                    print(f"vf2pp_mapping: {vf2pp_map}")
+                if VERIFY_MAPPING and not vf2pp.verify(vf2pp_map):
+                    raise ValueError("vf2-pp: mapping is invalid")
+            else:
+                print("vf2-pp_embeddable: False")
+                raise ValueError("vf2-pp: mapping is not embeddable")
+            print(f"vf2-pp_runtime: {end - start}")
         
         num_files += 1
         print()
     
-    if INCLUDE_VF2:
-        print(f"max_vf2_runtime: {max_vf2_runtime[0]} ({max_vf2_runtime[1]})")
-        print(f"total_vf2_runtime: {total_vf2_runtime}")
-        print(f"avg_vf2_runtime: {total_vf2_runtime / num_files}")
+    if INCLUDE_RXVF2:
+        print(f"rx-vf2_max_runtime: {max_vf2_runtime[0]} ({max_vf2_runtime[1]})")
+        print(f"rx-vf2_ttl_runtime: {total_vf2_runtime}")
+        print(f"rx-vf2_avg_runtime: {total_vf2_runtime / num_files}")
         print()
     
-    print(f"max_vf2pp_runtime: {max_vf2pp_runtime[0]} ({max_vf2pp_runtime[1]})")
-    print(f"total_vf2pp_runtime: {total_vf2pp_runtime}")
-    print(f"avg_vf2pp_runtime: {total_vf2pp_runtime / num_files}")
+    print(f"vf2-pp_max_runtime: {max_vf2pp_runtime[0]} ({max_vf2pp_runtime[1]})")
+    print(f"vf2-pp_ttl_runtime: {total_vf2pp_runtime}")
+    print(f"vf2-pp_avg_runtime: {total_vf2pp_runtime / num_files}")

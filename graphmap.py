@@ -24,3 +24,7 @@ class GraphMap(Layout):
     def __repr__(self) -> str:
         entries = ", ".join([f"{v.index}: {p}" for v, p in self._v2p.items()])
         return f"GraphMap{{{entries}}}"
+    
+    def clear(self) -> None:
+        self._v2p.clear()
+        self._p2v.clear()
