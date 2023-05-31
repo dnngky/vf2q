@@ -7,20 +7,23 @@ import time
 
 if __name__ == "__main__":
 
+    """
+    Noticeable concerns:
+    o------CIRCUIT------o----CUT-RULE-2----o------RX-VF2------o
+    | 54QBT_05CYC_QSE_1 | Passes*          | Passes           |
+    | 54QBT_05CYC_QSE_2 | Passes           | Takes too long+  |
+    | 54QBT_05CYC_QSE_3 | False negative^  | Passes           |
+    | 54QBT_05CYC_QSE_9 | Takes too long+  | Passes           |
+    o-------------------o------------------o------------------o
+    * within 40-60 seconds
+    ^ within 1-3 minutes
+    + over 5 minutes
+
+    However, these results are non-deterministic (with the exception of RX-VF2),
+    and seem to depend on the generated matching order. RX-VF2 is generally faster.
+    """
+
     path = "./benchmark/BNTF/"
-
-    """
-    VF2PP has trouble with:
-    - 54QBT_05CYC_QSE_1
-    - 54QBT_05CYC_QSE_3
-    - 54QBT_05CYC_QSE_9
-    
-    rustworkx's VF2 has trouble with (crashes the terminal):
-    - 54QBT_05CYC_QSE_2
-
-    In general, rustwork's VF2 is much faster (0s for most circuits,
-    with the exception of 54QBT_15+).
-    """
 
     max_vf2_runtime = [0., None]
     max_vf2pp_runtime = [0., None]
@@ -32,11 +35,11 @@ if __name__ == "__main__":
     INCLUDE_VF2 = True # Toggle this to include rustworkx's vf2_mapping() algorithm
     
     for filename in os.listdir(path):
-
+        
         if filename == "54QBT_05CYC_QSE_1.qasm": continue
+        if filename == "54QBT_05CYC_QSE_2.qasm": continue
         if filename == "54QBT_05CYC_QSE_3.qasm": continue
         if filename == "54QBT_05CYC_QSE_9.qasm": continue
-        if filename == "54QBT_05CYC_QSE_2.qasm": continue
 
         print(filename)
         

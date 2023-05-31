@@ -75,6 +75,8 @@ class CoverageTable:
         Returns True if the given node is a candidate.
         :return: True if the given node is a candidate.
         """
+        if not self._size: # If the mapping is currently empty, every node is a candidate
+            return True
         is_uncovered = gmap[node] is None
         if qumap:
             is_uncovered = gmap[qumap[node]] is None

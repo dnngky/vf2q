@@ -167,7 +167,7 @@ class VF2PP:
             self._gmaps.append(gmap.copy())
             return 1
         
-        n_maps = 0 # number of complete mappings found
+        n_maps = 0 # Number of complete mappings found
         cand1 = node_order[depth]
 
         for cand2 in self._covg2.cands(gmap):
@@ -211,7 +211,7 @@ class VF2PP:
         :return: True if the above holds.
         """
         for neighbor in map(lambda n: self._qumap[n], self._G1.neighbors(cand1)):
-            if gmap[neighbor] is None:
+            if gmap[neighbor] is None: # If this neighbor is not yet mapped, we skip it
                 continue
             if not self._G2.has_edge(cand2, gmap[neighbor]):
                 return False
@@ -220,19 +220,18 @@ class VF2PP:
     
     def _cut(self, gmap: GraphMap, cand1: int, cand2: int) -> bool:
         """
-        Returns True if cand2 has fewer neighbours within G2's candidates than those of cand1.
+        Returns True if cand2 has fewer uncovered neighbours than those of cand1.
         :return: True if the above holds.
         """
-        within_neighbors1 = [v for v in self._G1.neighbors(cand1) if self._covg1.is_cand(v, gmap, self._qumap)]
-        within_neighbors2 = [v for v in self._G2.neighbors(cand2) if self._covg2.is_cand(v, gmap)]
-        if len(within_neighbors2) < len(within_neighbors1):
-            return True
-
-        # NOTE: For some reason, the 2-look-ahead rule prevents the algorithm from working...
-        # beyond_neighbors1 = [v for v in self._G1.neighbors(cand1) if self._covg1[v] == 0]
-        # beyond_neighbors2 = [v for v in self._G2.neighbors(cand2) if self._covg2[v] == 0]
-        # if len(beyond_neighbors2) < len(beyond_neighbors1):
+        # within_neighbors1 = [v for v in self._G1.neighbors(cand1) if self._covg1.is_cand(v, gmap, self._qumap)]
+        # within_neighbors2 = [v for v in self._G2.neighbors(cand2) if self._covg2.is_cand(v, gmap)]
+        # if len(within_neighbors2) < len(within_neighbors1):
         #     return True
+
+        uncovered_neighbors1 = [v for v in self._G1.neighbors(cand1) if gmap[self._qumap[v]] is None]
+        uncovered_neighbors2 = [v for v in self._G2.neighbors(cand2) if gmap[v] is None]
+        if len(uncovered_neighbors2) < len(uncovered_neighbors1):
+            return True
 
         return False
 
