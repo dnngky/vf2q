@@ -7,23 +7,25 @@ from coveragetable import CoverageTable
 from qiskit.circuit import QuantumCircuit
 from qiskit.transpiler import Layout
 
+import math
 import rustworkx as rx
 import time
 
 class VF2PP:
     
-    _G1: rx.PyGraph
-    _G2: rx.PyGraph
-    _qumap: Layout
-    _embeddable: Optional[bool]
+    _G1: rx.PyGraph             # Interaction graph of quantum circuit (to be embedded)
+    _G2: rx.PyGraph             # Architecture graph of quantum device (to embed onto)
+    _qumap: Layout              # Qubit-to-index mapping
+    _embeddable: Optional[bool] # True if G1 is embeddable onto G2
 
-    _gmaps: List[GraphMap]
-    _node_order: List[int]
-    _covg1: CoverageTable
-    _covg2: CoverageTable
-    _state: int
-    _call_limit: int
-    _nmap_limit: int
+    _gmaps: List[GraphMap]      # All complete mappings found
+    _node_order: List[int]      # Matching order
+    _covg1: CoverageTable       # Coverage of G1
+    _covg2: CoverageTable       # Coverage of G2
+    _state: int                 # Number of states visited during
+    _call_limit: int            # Limit for number of states to visit
+    _time_limit: int            # Limit the period of time (s) to spend on searching
+    _nmap_limit: int            # Limit for number of complete mappings to search for
 
     def __init__(
         self,
@@ -31,7 +33,7 @@ class VF2PP:
         archgraph: rx.PyGraph
     ) -> Self:
         """
-        VF2++ initialiser.
+        VF2++ constructor.
         """
         if not isinstance(circuit, QuantumCircuit):
             raise TypeError("Circuit is not a QuantumCircuit")
@@ -55,9 +57,11 @@ class VF2PP:
     @staticmethod
     def _graphify(circuit: QuantumCircuit) -> Tuple[rx.PyGraph, Layout]:
         """
-        Converts the given quantum circuit to a graph G = (V, E), where V comprises the qubits in the
-        circuit, and for every (q0, q1) in E, there exists some CNOT gate operating on qubits q0 and q1.
-        :return: The graph corresponding to the given quantum circuit, and its qubit-to-index mapping.
+        Converts the given quantum circuit to a graph G = (V, E), where V comprises
+        the qubits in the circuit, and for every (p, q) in E, there exists some
+        CNOT gate operating on qubits p and q.
+        :return: The graph corresponding to the given quantum circuit, and its
+        qubit-to-index mapping.
         """
         circgraph = rx.PyGraph()
         qumap = Layout()
@@ -86,6 +90,7 @@ class VF2PP:
         self._covg2.clear()
         self._state = 0
         self._call_limit = -1
+        self._time_limit = -1
         self._nmap_limit = -1
     
     @property
@@ -174,38 +179,54 @@ class VF2PP:
         self,
         node_order: Optional[Sequence[int]] = None,
         call_limit: int = -1,
+        time_limit: int = -1,
         nmap_limit: int = -1
     ) -> int:
         """
         Performs VF2++ on G1 and G2 according to the matching order. If no matching order is
         provided, `matching_order()` is implictly called. `call_limit` specifies the maximum
-        number of states to visit before halting, and `nmap_limit` specifies the maximum
-        number of complete mappings to search for. If set to -1, no limit is imposed.
+        number of states to visit before halting, `time_limit` specifies the maximum period
+        of time (in seconds) to run for, and `nmap_limit` specifies the maximum number of
+        complete mappings to search for (whichever limit is reached first). If set to -1, no
+        limit is imposed.
         :return: The number of complete mappings found.
         """
         self._reset() # Clean everything up
 
         if call_limit <= 0 and call_limit != -1:
             raise ValueError("call_limit must be -1 or a nonzero integer")
+        if time_limit <= 0 and time_limit != -1:
+            raise ValueError("time_limit must be -1 or a nonzero integer")
         if nmap_limit <= 0 and nmap_limit != -1:
             raise ValueError("nmap_limit must be -1 or a nonzero integer")
+        if node_order and len(node_order) != len(self._G1):
+            raise ValueError("node_order must cover exactly the nodes in circgraph")
         
-        self._node_order = (node_order if node_order else self.matching_order())
-        self._call_limit = call_limit
-        self._nmap_limit = nmap_limit
-        num_maps = self._match() # Run VF2++
+        self._node_order = node_order if node_order else self.matching_order()
+        self._call_limit = call_limit if call_limit != -1 else math.inf
+        self._time_limit = time_limit if time_limit != -1 else math.inf
+        self._nmap_limit = nmap_limit if nmap_limit != -1 else math.inf
+        num_maps = self._match(time.time()) # Run VF2++
         self._embeddable = True if num_maps else False # Record embeddable status
 
         return num_maps
 
-    def _match(self, gmap: GraphMap = GraphMap(), depth: int = 0) -> int:
+    def _match(
+        self,
+        start: float,
+        gmap: GraphMap = GraphMap(),
+        depth: int = 0,
+    ) -> int:
         
         self._state += 1
 
+        # Check for complete mapping and limits reached
         if depth == len(self._G1):
             self._gmaps.append(gmap.copy())
             return 1
-        if self._state == self._call_limit:
+        if time.time() >= start + self._time_limit:
+            return 0
+        if self._state >= self._call_limit:
             return 0
         
         num_maps = 0 # Number of complete mappings found
@@ -215,30 +236,32 @@ class VF2PP:
             # Filter out infeasible candidates: O(deg(cand1) * deg(cand2))
             if self._cons(gmap, cand1, cand2) and not self._cut(gmap, cand1, cand2):
 
-                # Obtain uncovered neighbours of cand1 and cand2: O(deg(cand1) + deg(cand2))
-                uncovered_neighbors1 = [v for v in self._G1.neighbors(cand1) if gmap[self._qumap[v]] is None]
-                uncovered_neighbors2 = [v for v in self._G2.neighbors(cand2) if gmap[v] is None]
+                # Obtain unmapped neighbours of cand1 and cand2: O(deg(cand1) + deg(cand2))
+                unmapped_neighbors1 = [v for v in self._G1.neighbors(cand1) if gmap[self._qumap[v]] is None]
+                unmapped_neighbors2 = [v for v in self._G2.neighbors(cand2) if gmap[v] is None]
 
                 # Extend mapping and coverages: O(deg(cand1) + deg(cand2))
                 gmap[self._qumap[cand1]] = cand2
-                self._covg1.incr([cand1] + uncovered_neighbors1)
-                self._covg2.incr([cand2] + uncovered_neighbors2)
-                self._covg1.cover()
-                self._covg2.cover()
+                self._covg1.incr([cand1] + unmapped_neighbors1)
+                self._covg2.incr([cand2] + unmapped_neighbors2)
+                self._covg1.map(cand1)
+                self._covg2.map(cand2)
 
-                num_maps += self._match(gmap, depth + 1)
+                num_maps += self._match(start, gmap, depth + 1)
                 
                 # Restore mapping and coverages: O(deg(cand1) + deg(cand2))
+                self._covg1.unmap(cand1)
+                self._covg2.unmap(cand2)
+                self._covg1.decr([cand1] + unmapped_neighbors1)
+                self._covg2.decr([cand2] + unmapped_neighbors2)
                 del gmap[self._qumap[cand1]]
-                self._covg1.decr([cand1] + uncovered_neighbors1)
-                self._covg2.decr([cand2] + uncovered_neighbors2)
-                self._covg1.uncover()
-                self._covg2.uncover()
 
-                # If limits are set to -1, these will never be true
-                if len(self._gmaps) >= (self._nmap_limit if self._nmap_limit != -1 else len(self._gmaps) + 1):
+                # If at least one limit has been reached, return early
+                if len(self._gmaps) >= self._nmap_limit:
                     return num_maps
-                if self._state >= (self._call_limit if self._call_limit != -1 else self._state + 1):
+                if time.time() >= start + self._time_limit:
+                    return num_maps
+                if self._state >= self._call_limit:
                     return num_maps
         
         return num_maps
@@ -250,7 +273,7 @@ class VF2PP:
         """
         for node2 in range(len(self._G2)):
             
-            # If either covg1 or covg2 is empty, then every uncovered node is a candidate
+            # If either covg1 or covg2 is empty, then every unmapped node is a candidate
             if not (self._covg1 and self._covg2 or self._covg2[node2]):
                 yield (self._node_order[depth], node2)
                 continue
@@ -260,8 +283,8 @@ class VF2PP:
     
     def _cons(self, gmap: GraphMap, cand1: int, cand2: int) -> bool:
         """
-        Returns True if for all covered neighbours of `cand1`, the nodes they map to are precisely
-        the covered neighbours of `cand2`.
+        Returns True if for all mapped neighbours of `cand1`, the nodes they map to are precisely
+        the mapped neighbours of `cand2`.
         :return: True if the above holds.
         """
         for neighbor in map(lambda n: self._qumap[n], self._G1.neighbors(cand1)):
@@ -275,8 +298,8 @@ class VF2PP:
     def _cut(self, gmap: GraphMap, cand1: int, cand2: int) -> bool:
         """
         Returns True if:
-        1. `cand2` has fewer neighbors which are also in the candidate set than `cand1`.
-        2. `cand2` has fewer neighbors which are neither mapped nor in the candidate set than `cand1`.
+        1. `cand2` has fewer neighbors which are also candidates than `cand1`.
+        2. `cand2` has fewer neighbors which are neither mapped nor candidates than `cand1`.
 
         :return: True if the above holds.
         """

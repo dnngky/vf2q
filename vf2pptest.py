@@ -28,7 +28,7 @@ if __name__ == "__main__":
     num_files = 0
 
     INCLUDE_VF2PP = True # Toggle this to include VF2++
-    INCLUDE_RXVF2 = True # Toggle this to include rustworkx's VF2
+    INCLUDE_RXVF2 = False # Toggle this to include rustworkx's VF2
     VERIFY_MAPPING = True # Toggle this to enable/disable VF2PP mapping verification
     PRINT_MAPPING = False # Toggle this to print mappings
     
@@ -53,6 +53,7 @@ if __name__ == "__main__":
                 max_vf2_runtime[0] = (end - start)
                 max_vf2_runtime[1] = filename
             total_vf2_runtime += (end - start)
+            print(f"rx-vf2_runtime: {end - start}")
 
             if is_embeddable:
                 vf2_map = rx.vf2_mapping(vf2pp.archgraph, vf2pp.circgraph, subgraph=True, induced=False)
@@ -61,8 +62,7 @@ if __name__ == "__main__":
                     print(f"rx-vf2_mapping: {next(vf2_map)}")
             else:
                 print("rx-vf2_embeddable: False")
-                raise ValueError("rx-vf2: mapping is not embeddable")
-            print(f"rx-vf2_runtime: {end - start}")
+                raise ValueError("rx-vf2: False negative")
 
         if INCLUDE_VF2PP:
 
@@ -73,6 +73,7 @@ if __name__ == "__main__":
                 max_vf2pp_runtime[0] = (end - start)
                 max_vf2pp_runtime[1] = filename
             total_vf2pp_runtime += (end - start)
+            print(f"vf2-pp_runtime: {end - start}")
 
             if vf2pp.is_embeddable():
                 vf2pp_map = next(vf2pp.mappings())
@@ -83,8 +84,7 @@ if __name__ == "__main__":
                     raise ValueError("vf2-pp: mapping is invalid")
             else:
                 print("vf2-pp_embeddable: False")
-                raise ValueError("vf2-pp: mapping is not embeddable")
-            print(f"vf2-pp_runtime: {end - start}")
+                raise ValueError("vf2-pp: False negative")
         
         num_files += 1
         print()

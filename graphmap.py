@@ -1,12 +1,20 @@
 from qiskit.circuit import Qubit
 from qiskit.transpiler import Layout
-from typing import Optional, Union
+from typing import Optional, Self, Union
 
 class GraphMap(Layout):
+    """
+    A dynamic data structure representing the isomorphism between two graphs, if
+    any. Its structure is analogous to Qiskit's Layout module, with a few exceptions:
+    1. Attempting to access a non-existent item (in both v2p and p2v mappings)
+    returns None instead of raising a KeyError.
+    2. Attempting to delete a non-existent item (in both v2p and p2v mappings)
+    returns None instead of raising a LayoutError.
+    """
 
-    def __init__(self):
+    def __init__(self) -> Self:
         """
-        Construct a graph map.
+        GraphMap constructor.
         """
         super().__init__()
 
@@ -17,7 +25,7 @@ class GraphMap(Layout):
             return self._v2p[item]
         return None
     
-    def __delitem__(self, key: Union[Qubit, int]):
+    def __delitem__(self, key: Union[Qubit, int]) -> None:
         if key in self._p2v or key in self._v2p:
             super().__delitem__(key)
     

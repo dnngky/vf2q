@@ -1,14 +1,23 @@
 from collections import defaultdict
 from functools import singledispatchmethod
-from graphmap import GraphMap
-from qiskit.transpiler import Layout
-from typing import Generator, Optional
+from typing import Self
 
 class CoverageTable:
+    """
+    A dynamic data structure for managing the coverage of some graph throughout
+    a VF2++ matching run. The coverage level of a node is defined to be nonzero
+    if and only if that node is either mapped or is a candidate to be mapped in
+    the current state. The size of a CoverageTable is defined as the size of the
+    candidate set, i.e., the number of nodes with nonzero coverage levels that
+    are not currently mapped.
+    """
     _level: defaultdict[int, int]
     _size: int
 
-    def __init__(self):
+    def __init__(self) -> Self:
+        """
+        CoverageTable constructor.
+        """
         super().__init__()
         self._level = defaultdict(int)
         self._size = 0
@@ -16,22 +25,34 @@ class CoverageTable:
     def __len__(self) -> int:
         return self._size
     
-    def __repr__(self) -> str:
-        return "Coverage(" + ", ".join([f"{k}: {v}" for k, v in self._level.items() if v > 0]) + ")"
-    
     def __getitem__(self, node: int) -> int:
         return self._level[node]
     
-    def cover(self) -> None:
+    def __repr__(self) -> str:
+        return "Coverage(" + ", ".join([f"{k}: {v}" for k, v in self._level.items() if v > 0]) + ")"
+    
+    def map(self, node: int) -> None:
         """
-        Sets a node as covered, i.e., added to the mapping.
+        Sets a unmapped node as mapped. The node must already be covered,
+        i.e., have a nonzero coverage level.
         """
+        if not self._level[node]:
+            raise ValueError("Attempting to map an uncovered node")
+        if self._level[node] < 0:
+            raise ValueError("Attempting to map an already mapped node")
+        self._level[node] *= -1
         self._size -= 1
     
-    def uncover(self) -> None:
+    def unmap(self, node: int) -> None:
         """
-        Unsets a covered node, i.e., removed from the mapping.
+        Sets a mapped node as unmapped. The node must already be covered,
+        i.e., have a nonzero coverage level.
         """
+        if not self._level[node]:
+            raise ValueError("Attempting to unmap an uncovered node")
+        if self._level[node] > 0:
+            raise ValueError("Attempting to unmap an already unmapped node")
+        self._level[node] *= -1
         self._size += 1
 
     @singledispatchmethod
@@ -44,7 +65,7 @@ class CoverageTable:
     def _(self, node: int) -> None:
         if self._level[node] == 0:
             self._size += 1
-        self._level[node] += 1
+        self._level[node] = max(self._level[node] + 1, self._level[node] - 1)
 
     @incr.register
     def _(self, nodes: list) -> int:
@@ -59,7 +80,7 @@ class CoverageTable:
 
     @decr.register
     def _(self, node: int) -> None:
-        self._level[node] -= 1
+        self._level[node] = min(self._level[node] + 1, self._level[node] - 1)
         if self._level[node] == 0:
             self._size -= 1
     
