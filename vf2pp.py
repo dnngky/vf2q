@@ -1,8 +1,6 @@
+from candidateset import CandidateSet
 from collections import defaultdict
 from typing import List, Generator, MutableMapping, Optional, Self, Sequence, Tuple
-
-from graphmap import GraphMap
-from coveragetable import CoverageTable
 
 from qiskit.circuit import QuantumCircuit
 from qiskit.transpiler import Layout
@@ -18,10 +16,10 @@ class VF2PP:
     _qumap: Layout              # Qubit-to-index mapping
     _embeddable: Optional[bool] # True if G1 is embeddable onto G2
 
-    _gmaps: List[GraphMap]      # All complete mappings found
+    _gmaps: List[Layout]        # All complete mappings found
     _node_order: List[int]      # Matching order
-    _covg1: CoverageTable       # Coverage of G1
-    _covg2: CoverageTable       # Coverage of G2
+    _cset1: CandidateSet        # Coverage of G1
+    _cset2: CandidateSet        # Coverage of G2
     _state: int                 # Number of states visited during
     _call_limit: int            # Limit for number of states to visit
     _time_limit: int            # Limit the period of time (s) to spend on searching
@@ -45,8 +43,8 @@ class VF2PP:
         self._embeddable = None
         self._gmaps = list()
         self._node_order = list()
-        self._covg1 = CoverageTable()
-        self._covg2 = CoverageTable()
+        self._cset1 = CandidateSet()
+        self._cset2 = CandidateSet()
         self._state = 0
         self._call_limit = -1
         self._nmap_limit = -1
@@ -86,8 +84,8 @@ class VF2PP:
         """
         self._gmaps.clear()
         self._node_order.clear()
-        self._covg1.clear()
-        self._covg2.clear()
+        self._cset1.clear()
+        self._cset2.clear()
         self._state = 0
         self._call_limit = -1
         self._time_limit = -1
@@ -102,10 +100,10 @@ class VF2PP:
         return self._G2
 
     @property
-    def all_maps(self) -> List[GraphMap]:
+    def all_maps(self) -> List[Layout]:
         return self._gmaps
     
-    def mappings(self) -> Generator[GraphMap, None, None]:
+    def mappings(self) -> Generator[Layout, None, None]:
         for map in self._gmaps:
             yield map
 
@@ -171,7 +169,7 @@ class VF2PP:
     def _conn(self, node: int, node_order: Sequence[int]) -> int:
         """
         Computes the number of neighbours of the given node that are also in the matching order.
-        :return: The number of neighbours of the given node that are also in the matching order.
+        :return: The number indicating the above.
         """
         return len(set(self._G1.neighbors(node)).intersection(set(node_order)))
 
@@ -208,13 +206,12 @@ class VF2PP:
         self._nmap_limit = nmap_limit if nmap_limit != -1 else math.inf
         num_maps = self._match(time.time()) # Run VF2++
         self._embeddable = True if num_maps else False # Record embeddable status
-
         return num_maps
 
     def _match(
         self,
         start: float,
-        gmap: GraphMap = GraphMap(),
+        gmap: Layout = Layout(),
         depth: int = 0,
     ) -> int:
         
@@ -231,29 +228,29 @@ class VF2PP:
         
         num_maps = 0 # Number of complete mappings found
 
-        for cand1, cand2 in self._candidates(gmap, depth):
+        for cand1, cand2 in self._candidates(depth):
             
             # Filter out infeasible candidates: O(deg(cand1) * deg(cand2))
-            if self._cons(gmap, cand1, cand2) and not self._cut(gmap, cand1, cand2):
+            if self._cons(gmap, cand1, cand2) and not self._cut(cand1, cand2):
 
                 # Obtain unmapped neighbours of cand1 and cand2: O(deg(cand1) + deg(cand2))
-                unmapped_neighbors1 = [v for v in self._G1.neighbors(cand1) if gmap[self._qumap[v]] is None]
-                unmapped_neighbors2 = [v for v in self._G2.neighbors(cand2) if gmap[v] is None]
+                unmapped_neighbors1 = [v for v in self._G1.neighbors(cand1) if not self._cset1.ismapped(v)]
+                unmapped_neighbors2 = [v for v in self._G2.neighbors(cand2) if not self._cset2.ismapped(v)]
 
-                # Extend mapping and coverages: O(deg(cand1) + deg(cand2))
+                # Extend mapping and candidate sets: O(deg(cand1) + deg(cand2))
                 gmap[self._qumap[cand1]] = cand2
-                self._covg1.incr([cand1] + unmapped_neighbors1)
-                self._covg2.incr([cand2] + unmapped_neighbors2)
-                self._covg1.map(cand1)
-                self._covg2.map(cand2)
+                self._cset1.cover([cand1] + unmapped_neighbors1)
+                self._cset2.cover([cand2] + unmapped_neighbors2)
+                self._cset1.map(cand1)
+                self._cset2.map(cand2)
 
                 num_maps += self._match(start, gmap, depth + 1)
                 
-                # Restore mapping and coverages: O(deg(cand1) + deg(cand2))
-                self._covg1.unmap(cand1)
-                self._covg2.unmap(cand2)
-                self._covg1.decr([cand1] + unmapped_neighbors1)
-                self._covg2.decr([cand2] + unmapped_neighbors2)
+                # Restore mapping and candidate sets: O(deg(cand1) + deg(cand2))
+                self._cset1.unmap(cand1)
+                self._cset2.unmap(cand2)
+                self._cset1.uncover([cand1] + unmapped_neighbors1)
+                self._cset2.uncover([cand2] + unmapped_neighbors2)
                 del gmap[self._qumap[cand1]]
 
                 # If at least one limit has been reached, return early
@@ -266,56 +263,53 @@ class VF2PP:
         
         return num_maps
     
-    def _candidates(self, gmap: GraphMap, depth: int) -> Generator[Tuple[int], None, None]:
+    def _candidates(self, depth: int) -> Generator[Tuple[int], None, None]:
         """
         Returns an iterator through each candidate pair.
         :return: An iterator through each candidate pair.
         """
         for node2 in range(len(self._G2)):
-            
-            # If either covg1 or covg2 is empty, then every unmapped node is a candidate
-            if not (self._covg1 and self._covg2 or self._covg2[node2]):
+
+            # If either candidate set is empty, then every unmapped node is a candidate.
+            if not (self._cset1 and self._cset2 or self._cset2.ismapped(node2)):
                 yield (self._node_order[depth], node2)
                 continue
             
-            if self._covg2[node2] and gmap[node2] is None:
+            if self._cset2.iscand(node2):
                 yield (self._node_order[depth], node2)
     
-    def _cons(self, gmap: GraphMap, cand1: int, cand2: int) -> bool:
+    def _cons(self, gmap: Layout, cand1: int, cand2: int) -> bool:
         """
         Returns True if for all mapped neighbours of `cand1`, the nodes they map to are precisely
         the mapped neighbours of `cand2`.
         :return: True if the above holds.
         """
-        for neighbor in map(lambda n: self._qumap[n], self._G1.neighbors(cand1)):
-            if gmap[neighbor] is None: # If this neighbor is not yet mapped, we skip it
+        for neighbor in self._G1.neighbors(cand1):
+            if not self._cset1.ismapped(neighbor):
                 continue
-            if not self._G2.has_edge(cand2, gmap[neighbor]):
+            if not self._G2.has_edge(cand2, gmap[self._qumap[neighbor]]):
                 return False
         
         return True
     
-    def _cut(self, gmap: GraphMap, cand1: int, cand2: int) -> bool:
+    def _cut(self, cand1: int, cand2: int) -> bool:
         """
-        Returns True if:
-        1. `cand2` has fewer neighbors which are also candidates than `cand1`.
-        2. `cand2` has fewer neighbors which are neither mapped nor candidates than `cand1`.
-
+        Returns True if `cand2` has fewer candidate neighbors or unmapped neighbors than `cand1`.
         :return: True if the above holds.
         """
-        inner_neighbors1 = [v for v in self._G1.neighbors(cand1) if gmap[self._qumap[v]] is None and self._covg1[v]]
-        inner_neighbors2 = [v for v in self._G2.neighbors(cand2) if gmap[v] is None and self._covg2[v]]
+        inner_neighbors1 = [v for v in self._G1.neighbors(cand1) if self._cset1.iscand(v)]
+        inner_neighbors2 = [v for v in self._G2.neighbors(cand2) if self._cset2.iscand(v)]
         if len(inner_neighbors2) < len(inner_neighbors1):
             return True
 
-        outer_neighbors1 = [v for v in self._G1.neighbors(cand1) if gmap[self._qumap[v]] is None]
-        outer_neighbors2 = [v for v in self._G2.neighbors(cand2) if gmap[v] is None]
+        outer_neighbors1 = [v for v in self._G1.neighbors(cand1) if not self._cset1.ismapped(v)]
+        outer_neighbors2 = [v for v in self._G2.neighbors(cand2) if not self._cset2.ismapped(v)]
         if len(outer_neighbors2) < len(outer_neighbors1):
             return True
 
         return False
 
-    def verify(self, gmap: GraphMap) -> bool:
+    def verify(self, gmap: Layout) -> bool:
         """
         Verifies a mapping.
         :return: True if the mapping is complete and consistent.
@@ -328,12 +322,12 @@ class VF2PP:
         
         return True
     
-    def _check(self, gmap: GraphMap, visited: MutableMapping[int, bool], node: int) -> bool:
+    def _check(self, gmap: Layout, visited: MutableMapping[int, bool], node: int) -> bool:
         
         visited[node] = True
 
         for neighbor in self._G1.neighbors(node):
-            if gmap[self._qumap[neighbor]] is None:
+            if self._qumap[neighbor] not in gmap:
                 return False
             if not self._G2.has_edge(gmap[self._qumap[node]], gmap[self._qumap[neighbor]]):
                 return False
