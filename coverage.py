@@ -1,7 +1,7 @@
-from collections import defaultdict
-from typing import Generator, Iterable, Self, DefaultDict
+from typing import Dict, Iterable, Self
+import rustworkx as rx
 
-class CoverageSet:
+class Coverage:
     """
     A dynamic data structure for managing the coverage of a graph. The coverage of a
     node is defined to be:
@@ -9,39 +9,40 @@ class CoverageSet:
     - < 0 if the node is currently mapped; and
     - = 0 if the node is neither mapped nor an unmapped neighbor.
     """
-    _coverage: DefaultDict[int, int]
-    _size: int
+    _graph: rx.PyGraph
+    _coverage: Dict[int, int]
+    _num_unmapped_neighbors: int
 
-    def __init__(self) -> Self:
+    def __init__(self, graph: rx.PyGraph) -> Self:
         """
-        CandidateSet constructor.
+        Coverage constructor.
         """
-        super().__init__()
-        self._coverage = defaultdict(int)
-        self._size = 0
-
-    def __len__(self) -> int:
-        return self._size
-    
-    def __getitem__(self, node: int) -> int:
-        return self._coverage[node]
+        self._graph = graph
+        self.clear()
     
     def __repr__(self) -> str:
-        return f"CandidateSet{{{', '.join([str(k) for k, v in self._coverage.items() if v > 0])}}}"
+        return "Coverage{\n" + "\n".join([f"cov({k}): {v}" for k, v in self._coverage.items()]) + "\n}"
+    
+    @property
+    def num_unmapped_neighbors(self) -> int:
+        """
+        The number of unmapped neighbors.
+        """
+        return self._num_unmapped_neighbors
     
     def map(self, node: int) -> None:
         """
         Sets a unmapped node as mapped. The node must be a currently unmapped candidate.
         """
         self._coverage[node] *= -1
-        self._size -= 1
+        self._num_unmapped_neighbors -= 1
     
     def unmap(self, node: int) -> None:
         """
         Sets a mapped node as unmapped. The node must be a currently mapped candidate.
         """
         self._coverage[node] *= -1
-        self._size += 1
+        self._num_unmapped_neighbors += 1
     
     def cover(self, nodes: Iterable[int]) -> None:
         """
@@ -49,7 +50,7 @@ class CoverageSet:
         """
         for node in nodes:
             if not self._coverage[node]:
-                self._size += 1
+                self._num_unmapped_neighbors += 1
             self._coverage[node] = max(self._coverage[node] + 1, self._coverage[node] - 1)
     
     def uncover(self, nodes: Iterable[int]) -> None:
@@ -59,7 +60,7 @@ class CoverageSet:
         for node in nodes:
             self._coverage[node] = min(self._coverage[node] + 1, self._coverage[node] - 1)
             if not self._coverage[node]:
-                self._size -= 1
+                self._num_unmapped_neighbors -= 1
 
     def is_unmapped_neighbor(self, node: int) -> bool:
         """
@@ -76,5 +77,5 @@ class CoverageSet:
         return self._coverage[node] < 0
 
     def clear(self) -> None:
-        self._coverage.clear()
-        self._size = 0
+        self._coverage = dict.fromkeys(self._graph.node_indices(), 0)
+        self._num_unmapped_neighbors = 0

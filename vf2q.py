@@ -1,6 +1,6 @@
-from coverageset import CoverageSet
+from coverage import Coverage
 from collections import defaultdict
-from degreeset import DegreeSet
+from connectivity import Connectivity
 from heapq import heapify, heappop
 from typing import Dict, List, Generator, MutableMapping, Optional, Self, Sequence, Tuple
 
@@ -24,10 +24,10 @@ class VF2Q:
 
     _gmaps: List[Layout]            # All complete mappings found
     _node_order: List[int]          # Matching order
-    _cc_endpts: List[int]           # Cumulative ending indexes of connected components
-    _covset1: CoverageSet           # Coverage set of G1
-    _covset2: CoverageSet           # Coverage set of G2
-    _degset2: DegreeSet             # Degree set of G2
+    _cc_cumends: List[int]          # Cumulative end indexes of connected components
+    _covg1: Coverage                # Coverage of G1
+    _covg2: Coverage                # Coverage of G2
+    _conn2: Connectivity            # Connectivity of G2
     
     _state: int                     # Number of states visited during
     _call_limit: int                # Limit for number of states to visit
@@ -41,7 +41,7 @@ class VF2Q:
         archgraph: rx.PyGraph
     ) -> Self:
         """
-        VF2++ constructor.
+        VF2Q constructor.
         """
         if not isinstance(circuit, QuantumCircuit):
             raise TypeError("Circuit is not a QuantumCircuit")
@@ -56,10 +56,10 @@ class VF2Q:
 
         self._gmaps = list()
         self._node_order = list()
-        self._cc_endpts = list()
-        self._covset1 = CoverageSet()
-        self._covset2 = CoverageSet()
-        self._degset2 = DegreeSet(self._G2)
+        self._cc_cumends = list()
+        self._covg1 = Coverage(self._G2)
+        self._covg2 = Coverage(self._G2)
+        self._conn2 = Connectivity(self._G2)
 
         if len(self._G1) > len(self._G2):
             raise ValueError("Circuit width exceeds archgraph width")
@@ -96,10 +96,10 @@ class VF2Q:
         """
         self._gmaps.clear()
         self._node_order.clear()
-        self._cc_endpts.clear()
-        self._covset1.clear()
-        self._covset2.clear()
-        self._degset2.clear()
+        self._cc_cumends.clear()
+        self._covg1.clear()
+        self._covg2.clear()
+        self._conn2.clear()
 
         self._state = 0
         self._call_limit = -1
@@ -123,9 +123,9 @@ class VF2Q:
     
     @property
     def cc_cum_len(self) -> List[int]:
-        if not self._cc_endpts:
+        if not self._cc_cumends:
             return self._matching_order()[1]
-        return self._cc_endpts
+        return self._cc_cumends
 
     @property
     def all_maps(self) -> List[Layout]:
@@ -161,13 +161,13 @@ class VF2Q:
             node_orders.append(node_order)
         
         merged_node_orders = list()
-        cc_cum_len = list()
+        cc_cumends = list()
         for node_order in sorted(node_orders, key=lambda n: len(n), reverse=True):
             merged_node_orders.extend(node_order)
-            cc_cum_len.append(len(merged_node_orders))
-        cc_cum_len = list(map(lambda x: x - 1, cc_cum_len))
+            cc_cumends.append(len(merged_node_orders))
+        cc_cumends = list(map(lambda x: x - 1, cc_cumends))
         
-        return merged_node_orders, cc_cum_len
+        return merged_node_orders, cc_cumends
     
     def _process_level(
         self,
@@ -197,7 +197,8 @@ class VF2Q:
             
             # VF2++ Algorithm 3
             while curr_layer:
-                priority = lambda u, d=max_deg, n=node_order: self._conn(u, n) + (1 - self._G1.degree(u) / d)
+                priority = lambda u, d=max_deg, n=node_order: \
+                    self._num_matched_neighbors(u, n) + 1 - self._G1.degree(u) / d
                 node = min(curr_layer, key=priority)
                 curr_layer.remove(node)
                 nodes_left.remove(node)
@@ -207,7 +208,7 @@ class VF2Q:
 
         return node_order
 
-    def _conn(self, node: int, node_order: Sequence[int]) -> int:
+    def _num_matched_neighbors(self, node: int, node_order: Sequence[int]) -> int:
         """
         Computes the number of neighbours of the given node that are also in the matching order.
         :return: The number indicating the above.
@@ -229,7 +230,7 @@ class VF2Q:
         limit is imposed.
         :return: The number of complete mappings found.
         """
-        self._reset() # Clean everything up
+        self._reset()
 
         if call_limit <= 0 and call_limit != -1:
             raise ValueError("call_limit must be -1 or a nonzero integer")
@@ -238,12 +239,12 @@ class VF2Q:
         if nmap_limit <= 0 and nmap_limit != -1:
             raise ValueError("nmap_limit must be -1 or a nonzero integer")
         
-        self._node_order, self._cc_endpts = self._matching_order()
+        self._node_order, self._cc_cumends = self._matching_order()
         self._call_limit = call_limit if call_limit != -1 else math.inf
         self._time_limit = time_limit if time_limit != -1 else math.inf
         self._nmap_limit = nmap_limit if nmap_limit != -1 else math.inf
 
-        num_maps = self._run(time.time()) # Run VF2++
+        num_maps = self._run(time.time()) # Run VF2Q
         self._embeddable = True if num_maps else False # Record embeddable status
         
         return num_maps
@@ -269,13 +270,13 @@ class VF2Q:
         if time_limit <= 0 and time_limit != -1:
             raise ValueError("time_limit must be -1 or a nonzero integer")
         
-        self._node_order, self._cc_endpts = self._matching_order()
+        self._node_order, self._cc_cumends = self._matching_order()
         self._call_limit = call_limit if call_limit != -1 else math.inf
         self._time_limit = time_limit if time_limit != -1 else math.inf
         self._nmap_limit = nmap_limit if nmap_limit != -1 else math.inf
 
-        num_maps = self._run(time.time(), prev_gmap=prev_gmap)
-        self._embeddable = True if num_maps else False
+        num_maps = self._run(time.time(), prev_gmap=prev_gmap) # Run VF2Q
+        self._embeddable = True if num_maps else False # Record embeddable status
         
         return num_maps
 
@@ -308,31 +309,32 @@ class VF2Q:
 
         for cand1, cand2 in self._candidates(depth):
             
-            # Filter out infeasible candidates: O(deg(cand1) * deg(cand2))
+            # Filter out infeasible candidates
             if self._consistent(gmap, cand1, cand2) and not self._cut(depth, cand1, cand2):
 
                 # Obtain unmapped neighbours of cand1 and cand2
-                unmapped_neighbors1 = [v for v in self._G1.neighbors(cand1) if not self._covset1.is_mapped(v)]
-                unmapped_neighbors2 = [v for v in self._G2.neighbors(cand2) if not self._covset2.is_mapped(v)]
+                unmapped_neighbors1 = [v for v in self._G1.neighbors(cand1) if not self._covg1.is_mapped(v)]
+                unmapped_neighbors2 = [v for v in self._G2.neighbors(cand2) if not self._covg2.is_mapped(v)]
 
                 # Extend mapping
                 gmap[self._qmap[cand1]] = cand2
 
-                # Update neighbor and degree sets
-                self._covset1.cover([cand1] + unmapped_neighbors1)
-                self._covset2.cover([cand2] + unmapped_neighbors2)
-                self._covset1.map(cand1)
-                self._covset2.map(cand2)
-                self._degset2.decr_neighbors(cand2, self._covset2)
+                # Update coverage and connectivity
+                self._covg1.cover([cand1] + unmapped_neighbors1)
+                self._covg2.cover([cand2] + unmapped_neighbors2)
+                self._covg1.map(cand1)
+                self._covg2.map(cand2)
+                self._conn2.disconnect_neighbors(cand2, self._covg2)
                 
+                # Descend to the next state
                 num_maps += self._run(start, gmap, depth + 1)
                 
-                # Restore neighbor and degree sets
-                self._covset1.unmap(cand1)
-                self._covset2.unmap(cand2)
-                self._covset1.uncover([cand1] + unmapped_neighbors1)
-                self._covset2.uncover([cand2] + unmapped_neighbors2)
-                self._degset2.incr_neighbors(cand2, self._covset2)
+                # Restore coverage and connectivity
+                self._covg1.unmap(cand1)
+                self._covg2.unmap(cand2)
+                self._covg1.uncover([cand1] + unmapped_neighbors1)
+                self._covg2.uncover([cand2] + unmapped_neighbors2)
+                self._conn2.reconnect_neighbors(cand2, self._covg2)
 
                 # If at least one limit has been reached, return early
                 if len(self._gmaps) >= self._nmap_limit:
@@ -350,20 +352,19 @@ class VF2Q:
         :return: An iterator through each candidate pair.
         """
         node1 = self._node_order[depth]
+        cand_nodes2 = list()
 
-        if not (self._covset1 and self._covset2):
-            cand_nodes2 = list()
+        if not (self._covg1.num_unmapped_neighbors and self._covg2.num_unmapped_neighbors):
             for node2 in self._G2.node_indices():
-                if not self._covset2.is_mapped(node2):
+                if not self._covg2.is_mapped(node2):
                     cand_nodes2.append((self._centrality2[node2], node2))
             heapify(cand_nodes2)
             while cand_nodes2:
                 yield (node1, heappop(cand_nodes2)[1])
         
         else:
-            cand_nodes2 = list()
             for node2 in self._G2.node_indices():
-                if self._covset2.is_unmapped_neighbor(node2):
+                if self._covg2.is_unmapped_neighbor(node2):
                     cand_nodes2.append((self._G2.degree(node2), node2))
             heapify(cand_nodes2)
             while cand_nodes2:
@@ -376,7 +377,7 @@ class VF2Q:
         :return: True if the above holds.
         """
         for neighbor in self._G1.neighbors(cand1):
-            if not self._covset1.is_mapped(neighbor):
+            if not self._covg1.is_mapped(neighbor):
                 continue
             if not self._G2.has_edge(cand2, gmap[self._qmap[neighbor]]):
                 return False
@@ -386,24 +387,25 @@ class VF2Q:
     def _cut(self, depth: int, cand1: int, cand2: int) -> bool:
         """
         Returns True if
-        1. `cand2` has fewer candidate neighbors
+        1. `cand2` has fewer candidate neighbors than `cand1`.
         2. `cand2` has fewer unmapped neighbors than `cand1`.
-        3. Mapping `cand2` leaves G2 with insufficient non-sink nodes.
+        3. `cand1` is the last unmapped node of the current connected component, and mapping `cand2` it would
+        leave G2 with insufficient non-sink nodes.
 
         :return: True if the above holds.
         """
-        num_cand_neighbors1 = len([v for v in self._G1.neighbors(cand1) if self._covset1.is_unmapped_neighbor(v)])
-        num_cand_neighbors2 = len([v for v in self._G2.neighbors(cand2) if self._covset2.is_unmapped_neighbor(v)])
+        num_cand_neighbors1 = len([v for v in self._G1.neighbors(cand1) if self._covg1.is_unmapped_neighbor(v)])
+        num_cand_neighbors2 = len([v for v in self._G2.neighbors(cand2) if self._covg2.is_unmapped_neighbor(v)])
         if num_cand_neighbors2 < num_cand_neighbors1:
             return True
 
-        num_unmapped_neighbors1 = len([v for v in self._G1.neighbors(cand1) if not self._covset1.is_mapped(v)])
-        num_unmapped_neighbors2 = len([v for v in self._G2.neighbors(cand2) if not self._covset2.is_mapped(v)])
+        num_unmapped_neighbors1 = len([v for v in self._G1.neighbors(cand1) if not self._covg1.is_mapped(v)])
+        num_unmapped_neighbors2 = len([v for v in self._G2.neighbors(cand2) if not self._covg2.is_mapped(v)])
         if num_unmapped_neighbors2 < num_unmapped_neighbors1:
             return True
         
-        num_nonsinks2 = len(self._G2) - self._degset2.num_sinks_after_mapping(cand2, self._covset2)
-        if depth in self._cc_endpts and num_nonsinks2 < self._num_nonsinks1:
+        num_nonsinks2 = len(self._G2) - self._conn2.num_sinks_after_mapping(cand2, self._covg2)
+        if depth in self._cc_cumends and num_nonsinks2 < self._num_nonsinks1:
             return True
 
         return False

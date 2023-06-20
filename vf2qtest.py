@@ -29,20 +29,20 @@ if __name__ == "__main__":
     total_vf2pp_runtime = 0.
     num_files = 0
 
-    INCLUDE_VF2PP = False # Toggle this to include VF2++
-    INCLUDE_RXVF2 = True # Toggle this to include rustworkx's VF2
+    INCLUDE_VF2PP = True # Toggle this to include VF2++
+    INCLUDE_RXVF2 = False # Toggle this to include rustworkx's VF2
     VERIFY_MAPPING = True # Toggle this to enable/disable VF2PP mapping verification
     PRINT_MAPPING = False # Toggle this to print mappings
     
     for filename in os.listdir(path):
         
-        # if filename == "54QBT_05CYC_QSE_0.qasm": continue
-        # if filename == "54QBT_05CYC_QSE_2.qasm": continue
-        if filename == "54QBT_05CYC_QSE_3.qasm": continue
-        # if filename == "54QBT_05CYC_QSE_5.qasm": continue
-        # if filename == "54QBT_05CYC_QSE_7.qasm": continue
-        # if filename == "54QBT_05CYC_QSE_9.qasm": continue
-        # if filename == "54QBT_10CYC_QSE_0.qasm": continue
+        # if filename != "54QBT_05CYC_QSE_0.qasm": continue
+        # if filename != "54QBT_05CYC_QSE_2.qasm": continue
+        # if filename != "54QBT_05CYC_QSE_3.qasm": continue
+        # if filename != "54QBT_05CYC_QSE_5.qasm": continue
+        # if filename != "54QBT_05CYC_QSE_7.qasm": continue
+        # if filename != "54QBT_05CYC_QSE_9.qasm": continue
+        # if filename != "54QBT_10CYC_QSE_0.qasm": continue
 
         print(filename)
         
