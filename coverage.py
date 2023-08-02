@@ -1,5 +1,5 @@
 from typing import Dict, Iterable, Self
-import rustworkx as rx
+from rustworkx import PyGraph
 
 class Coverage:
     """
@@ -9,11 +9,11 @@ class Coverage:
     - < 0 if the node is currently mapped; and
     - = 0 if the node is neither mapped nor an unmapped neighbor.
     """
-    _graph: rx.PyGraph
+    _graph: PyGraph
     _coverage: Dict[int, int]
     _num_unmapped_neighbors: int
 
-    def __init__(self, graph: rx.PyGraph) -> Self:
+    def __init__(self, graph: PyGraph) -> Self:
         """
         Coverage constructor.
         """
@@ -25,9 +25,6 @@ class Coverage:
     
     @property
     def num_unmapped_neighbors(self) -> int:
-        """
-        The number of unmapped neighbors.
-        """
         return self._num_unmapped_neighbors
     
     def map(self, node: int) -> None:
@@ -64,7 +61,8 @@ class Coverage:
 
     def is_unmapped_neighbor(self, node: int) -> bool:
         """
-        Returns True if the given node is currently an umapped neighbor.
+        Returns True if the given node is currently an umapped neighbor of some already
+        mapped node.
         :return: True if the above holds.
         """
         return self._coverage[node] > 0

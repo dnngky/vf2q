@@ -1,6 +1,6 @@
 from coverage import Coverage
 from typing import Dict, Self, Tuple
-import rustworkx as rx
+from rustworkx import connected_components, PyGraph
 
 class Connectivity:
     """
@@ -8,11 +8,11 @@ class Connectivity:
     defined as the number of unmapped neighbours it has. A node with zero connectivity is considered
     a sink node.
     """
-    _graph: rx.PyGraph
+    _graph: PyGraph
     _connectivity: Dict[int, int]
     _num_sinks: int
 
-    def __init__(self, graph: rx.PyGraph) -> Self:
+    def __init__(self, graph: PyGraph) -> Self:
         """
         Connectivity constructor.
         """
@@ -24,9 +24,6 @@ class Connectivity:
     
     @property
     def num_sinks(self) -> Tuple[int]:
-        """
-        The number of sink nodes.
-        """
         return self._num_sinks
 
     def disconnect_neighbors(self, node: int, covg: Coverage) -> None:
@@ -51,16 +48,16 @@ class Connectivity:
         if self._connectivity[node] == 0:
             self._num_sinks += 1
 
-    def num_sinks_after_mapping(self, node: int, covg: Coverage) -> Tuple[int, int]:
+    def num_non_sinks_after_mapping(self, node: int, covg: Coverage) -> Tuple[int, int]:
         """
-        Computes the number of sink nodes if the given node gets mapped.
-        :return: The number of sink nodes.
+        Computes the number of non-sink nodes after the given node is mapped.
+        :return: The number of non-sink nodes.
         """
         self.disconnect_neighbors(node, covg)
         num_sinks = self._num_sinks
         self.reconnect_neighbors(node, covg)
-        return num_sinks
+        return len(self._graph) - num_sinks
     
     def clear(self) -> None:
         self._connectivity = dict([(u, self._graph.degree(u)) for u in self._graph.node_indices()])
-        self._num_sinks = len([cc for cc in rx.connected_components(self._graph) if len(cc) == 1])
+        self._num_sinks = len([cc for cc in connected_components(self._graph) if len(cc) == 1])
