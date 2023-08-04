@@ -190,13 +190,13 @@ def test_partition(
 
         circuit = QuantumCircuit.from_qasm_file(path + filename)
         dag = circuit_to_dag(circuit)
-        partitions = VF2Q.partition_circuit(circuit, max_iter, max_calls)
-        reduction = len(list(dag.layers())) - len(partitions)
+        VF2Q.partition_circuit(circuit, max_iter, max_calls)
+        reduction = len(list(dag.layers())) - len(VF2Q.subcircs)
         if reduction > max_reduction[0]:
             max_reduction[0] = reduction
             max_reduction[1] = filename
         total_reduction += reduction
-        print(f"{filename}: {len(list(dag.layers()))} -> {len(partitions)} (-{reduction})")
+        print(f"{filename}: {len(list(dag.layers()))} -> {len(VF2Q.subcircs)} (-{reduction})")
 
         num_files += 1
 
@@ -219,13 +219,13 @@ def test_match_subcircs(
     for filename in os.listdir(path):
 
         circuit = QuantumCircuit.from_qasm_file(path + filename)
-        subcircs = VF2Q.partition_circuit(circuit, max_iter, max_calls)
-        _, cost = VF2Q.match_subcircs(subcircs, w1, w2)
-        if cost > max_cost[0]:
-            max_cost[0] = cost
+        VF2Q.partition_circuit(circuit, max_iter, max_calls)
+        VF2Q.match_subcircs(w1, w2)
+        if VF2Q.cost > max_cost[0]:
+            max_cost[0] = VF2Q.cost
             max_cost[1] = filename
-        total_cost += cost
-        print(f"{filename}: {cost}")
+        total_cost += VF2Q.cost
+        print(f"{filename}: {VF2Q.cost}")
 
         num_files += 1
 
@@ -233,11 +233,55 @@ def test_match_subcircs(
     print(f"ttl_cost: {total_cost}")
     print(f"avg_cost: {total_cost / num_files}")
 
+def test_all(
+    path: str,
+    max_iter: int,
+    max_calls: int,
+    w1: float,
+    w2: float
+) -> None:
+    
+    max_swaps = [-1, ""]
+    total_swaps = 0
+    max_depth_diff = [-1, ""]
+    total_depth_diff = 0
+    num_files = 0
+    
+    for filename in os.listdir(path):
+
+        if filename.startswith("6QBT_large_depth_opt_10"): continue
+
+        VF2Q.circuit = QuantumCircuit.from_qasm_file(path + filename)
+        VF2Q.partition_circuit(max_iter, max_calls)
+        VF2Q.match_subcircs(w1, w2)
+        VF2Q.apply_swaps()
+        VF2Q.transform_circuit()
+
+        swaps = len(VF2Q.transformed_circ.data) - len(VF2Q.circuit)
+        if swaps > max_swaps[0]:
+            max_swaps[0] = swaps
+            max_swaps[1] = filename
+        total_swaps += swaps
+        depth_diff = VF2Q.transformed_circ.depth() - VF2Q.circuit.depth()
+        if depth_diff > max_depth_diff[0]:
+            max_depth_diff[0] = depth_diff
+            max_depth_diff[1] = filename
+        total_depth_diff += depth_diff
+        print(f"{filename}: swaps {swaps}, depth_diff {depth_diff}")
+        
+        num_files += 1
+    
+    print(f"max_swaps: {max_swaps[0]} ({max_swaps[1]})")
+    print(f"ttl_swaps: {total_swaps}")
+    print(f"avg_swaps: {total_swaps / num_files}")
+    print(f"max_depth_diff: {max_depth_diff[0]} ({max_depth_diff[1]})")
+    print(f"ttl_depth_diff: {total_depth_diff}")
+    print(f"avg_depth_diff: {total_depth_diff / num_files}")
 
 if __name__ == "__main__":
 
     VF2Q.archgraph = sycamore54()
-    path = "./benchmark/20Q_depth_Tokyo/"
+    path = "./benchmark/6Qbench/"
 
     # test_match(
     #     path,
@@ -258,7 +302,14 @@ if __name__ == "__main__":
     #     max_iter=20,
     #     max_calls=2000
     # )
-    test_match_subcircs(
+    # test_match_subcircs(
+    #     path,
+    #     max_iter=20,
+    #     max_calls=2000,
+    #     w1=200,
+    #     w2=200
+    # )
+    test_all(
         path,
         max_iter=20,
         max_calls=2000,
