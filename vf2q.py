@@ -9,6 +9,7 @@ from typing import List, Generator, MutableMapping, Optional, Self, Sequence, Tu
 from qiskit.circuit import QuantumCircuit
 from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.transpiler import Layout
+from qiskit.transpiler.passes.routing.algorithms.token_swapper import ApproximateTokenSwapper
 
 from rustworkx import (
     all_pairs_dijkstra_path_lengths,
@@ -280,80 +281,18 @@ class VF2Q(metaclass=VF2QMeta):
             cls._cost = bwd_cost
         
     @classmethod
-    def apply_swaps(cls) -> None:
+    def apply_swaps(cls, trials: int = 4) -> None:
         """
         Apply swaps to transform the mapping of some sub-circuit to that of the successive
-        sub-circuit, for all sub-circuits. Based on the approximate token swapping algorithm
-        in Miltzow et al.
+        sub-circuit, for all sub-circuits.
         """
         cls._swaps.clear()
         for i in range(1, len(cls._maps)):
-            tokens = dict()
+            mapping = dict()
             for q in cls._maps[i - 1].get_physical_bits():
-                tokens[q] = cls._maps[i][cls._maps[i - 1][q]]
-            cls._swaps.append(cls._token_swap(tokens))
-    
-    @classmethod
-    def _token_swap(cls, tokens: MutableMapping[int, int]) -> List:
-        
-        def get_unresolved_node(
-            tokens: MutableMapping[int, int],
-            visited: MutableMapping[int, bool]
-        ) -> int:
-            for node, token in tokens.items():
-                if token is not None and node != token and not visited[node]:
-                    return node
-            # If no unresolved nodes found, relax the requirements
-            for node, token in tokens.items():
-                if token is not None and node != token:
-                    return node
-
-        dist = distance_matrix(cls._archgraph)
-        swaps = list()
-        visited = defaultdict(bool)
-
-        while True:
-            
-            # Check whether all tokens are on their target nodes
-            for node, token in tokens.items():
-                if token is not None and node != token:
-                    break
-            else:
-                break
-
-            src_node = get_unresolved_node(tokens, visited)
-            node, targ = src_node, tokens.get(src_node)
-            visited.clear()
-            node_chain = list()
-            is_deadend = False
-
-            while not visited[node] and targ != node:
-                visited[node] = True
-                for neighbor in cls._archgraph.neighbors(node):
-                    if (not node_chain or neighbor != node_chain[-1]) and \
-                        (targ is None and dist[neighbor][src_node] <= dist[node][src_node]) or \
-                        (targ is not None and dist[neighbor][targ] < dist[node][targ]):
-                        node_chain.append(node)
-                        node, targ = neighbor, tokens.get(neighbor)
-                        break
-                else:
-                    is_deadend = True
-                    break
-            
-            if targ == node or is_deadend:
-                src, dst = node, node_chain[-1]
-                swaps.append((src, dst))
-                tokens[src], tokens[dst] = tokens.get(dst), tokens.get(src)
-            
-            else:
-                i = len(node_chain) - 1
-                while node_chain[i] != node:
-                    src, dst = node_chain[i], node_chain[i - 1]
-                    swaps.append((src, dst))
-                    tokens[src], tokens[dst] = tokens.get(dst), tokens.get(src)
-                    i -= 1
-        
-        return swaps
+                mapping[q] = cls._maps[i][cls._maps[i - 1][q]]
+            swapper = ApproximateTokenSwapper(cls._archgraph)
+            cls._swaps.append(swapper.map(mapping, trials))
     
     @classmethod
     def transform_circuit(cls) -> None:

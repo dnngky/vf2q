@@ -245,17 +245,19 @@ def test_all(
     total_swaps = 0
     max_depth_diff = [-1, ""]
     total_depth_diff = 0
+    max_runtime = [-1., ""]
+    total_runtime = 0.
     num_files = 0
     
     for filename in os.listdir(path):
-
-        if filename.startswith("6QBT_large_depth_opt_10"): continue
-
+        
         VF2Q.circuit = QuantumCircuit.from_qasm_file(path + filename)
+        start = time.time()
         VF2Q.partition_circuit(max_iter, max_calls)
         VF2Q.match_subcircs(w1, w2)
         VF2Q.apply_swaps()
         VF2Q.transform_circuit()
+        end = time.time()
 
         swaps = len(VF2Q.transformed_circ.data) - len(VF2Q.circuit)
         if swaps > max_swaps[0]:
@@ -267,6 +269,10 @@ def test_all(
             max_depth_diff[0] = depth_diff
             max_depth_diff[1] = filename
         total_depth_diff += depth_diff
+        if end - start > max_runtime[0]:
+            max_runtime[0] = end - start
+            max_runtime[1] = filename
+        total_runtime += end - start
         print(f"{filename}: swaps {swaps}, depth_diff {depth_diff}")
         
         num_files += 1
@@ -277,11 +283,14 @@ def test_all(
     print(f"max_depth_diff: {max_depth_diff[0]} ({max_depth_diff[1]})")
     print(f"ttl_depth_diff: {total_depth_diff}")
     print(f"avg_depth_diff: {total_depth_diff / num_files}")
+    print(f"max_runtime: {max_runtime[0]} ({max_runtime[1]})")
+    print(f"ttl_runtime: {total_runtime}")
+    print(f"avg_runtime: {total_runtime / num_files}")
 
 if __name__ == "__main__":
 
     VF2Q.archgraph = sycamore54()
-    path = "./benchmark/6Qbench/"
+    path = "./benchmark/20Q_depth_Tokyo/"
 
     # test_match(
     #     path,
