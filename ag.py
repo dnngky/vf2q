@@ -2,7 +2,7 @@ import rustworkx as rx
 
 # Q-grid
 def qgrid(m,n) -> rx.PyGraph:
-    g = rx.PyPyGraph()
+    g = rx.PyGraph()
     g.add_nodes_from(list(range(0,m*n-1)))
     for i in range(0,m):
         for j in range(0,n):
@@ -20,6 +20,16 @@ def ourense() -> rx.PyGraph:
     g.add_edge(0, 2, (0, 2))
     g.add_edge(0, 3, (0, 3))
     g.add_edge(3, 4, (3, 4))
+    return g
+
+# IBM Q Melbourne (14 qubits)
+def melbourne() -> rx.PyGraph:
+    g = rx.PyGraph()
+    g.add_nodes_from(list(range(14)))
+    for i in range(6):
+        g.add_edge(i, i+1, (i, i+1))
+        g.add_edge(i+1, i+7, (i+1, i+7))
+        g.add_edge(i+7, i+8, (i+7, i+8))
     return g
 
 # IBM Q Tokyo (20 qubits)

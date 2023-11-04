@@ -3,8 +3,8 @@ from collections import defaultdict
 from connectivity import Connectivity
 from heapq import heapify, heappop
 from math import inf
-from time import time, sleep
-from typing import List, Generator, MutableMapping, Optional, Self, Sequence, Tuple
+from time import time
+from typing import Dict, List, Generator, MutableMapping, Optional, Self, Sequence, Tuple
 
 from qiskit.circuit import QuantumCircuit
 from qiskit.converters import circuit_to_dag, dag_to_circuit
@@ -67,7 +67,7 @@ class VF2QMeta(type):
 
     @property
     def circgraph(cls) -> PyGraph:
-        return VF2Q.graphify(cls._circuit)
+        return VF2Q.graphify(cls._circuit)[0]
 
     @property
     def subcircs(cls) -> List[QuantumCircuit]:
@@ -144,7 +144,8 @@ class VF2Q(metaclass=VF2QMeta):
         self._num_non_singletons1 = \
             len(self._G1) - len([cc for cc in connected_components(self._G1) if len(cc) == 1])
         self._dist2 = all_pairs_dijkstra_path_lengths(self._G2, lambda _: 1)
-        self._centrality2 = betweenness_centrality(self._G2, normalized=False)
+        self._cent2 = VF2Q.normalised_centrality(self._G2)
+        self._deg2 = VF2Q.normalised_degree(self._G2)
         self._node_order = list()
         self._cc_end_idxs = list()
         
@@ -223,8 +224,8 @@ class VF2Q(metaclass=VF2QMeta):
     @classmethod
     def match_subcircs(
         cls,
-        w1: float = 200,
-        w2: float = 200
+        w1: float = 1,
+        w2: float = 1
     ) -> None:
         """
         Match each and every sub-circuit.
@@ -295,7 +296,7 @@ class VF2Q(metaclass=VF2QMeta):
             cls._swaps.append(swapper.map(mapping, trials))
     
     @classmethod
-    def transform_circuit(cls) -> None:
+    def transform_circuit(cls, decompose: bool = True) -> None:
 
         cls._transformed_circ = QuantumCircuit(len(cls._archgraph))
         for i in range(len(cls._subcircs)):
@@ -307,6 +308,8 @@ class VF2Q(metaclass=VF2QMeta):
             if i < len(cls._swaps):
                 for q0, q1 in cls._swaps[i]:
                     cls._transformed_circ.swap(q0, q1)
+        if decompose:
+            cls._transformed_circ = cls._transformed_circ.decompose("swap")
 
     @staticmethod
     def graphify(circuit: QuantumCircuit) -> Tuple[PyGraph, Layout]:
@@ -333,6 +336,25 @@ class VF2Q(metaclass=VF2QMeta):
             circgraph.add_edge(qumap[q0], qumap[q1], (qumap[q0], qumap[q1]))
         
         return circgraph, qumap
+    
+    @staticmethod
+    def normalised_centrality(graph: PyGraph) -> Dict:
+        centrality = betweenness_centrality(graph, normalized=False)
+        normalised_centrality = dict()
+        max_cent = max(centrality.values())
+        min_cent = min(centrality.values())
+        for node, cent in centrality.items():
+            normalised_centrality[node] = (cent - min_cent) / (max_cent - min_cent)
+        return normalised_centrality
+    
+    @staticmethod
+    def normalised_degree(graph: PyGraph) -> Dict:
+        normalised_degree = dict()
+        max_deg = max([graph.degree(node) for node in graph.node_indices()])
+        min_deg = min([graph.degree(node) for node in graph.node_indices()])
+        for node in graph.node_indices():
+            normalised_degree[node] = (graph.degree(node) - min_deg) / (max_deg - min_deg)
+        return normalised_degree
     
     def _reset(self) -> None:
         """
@@ -472,8 +494,8 @@ class VF2Q(metaclass=VF2QMeta):
         prev_gmap: Layout,
         call_limit: int = -1,
         time_limit: float = -1,
-        w1: float = 200,
-        w2: float = 200
+        w1: float = 1.,
+        w2: float = 1.
     ) -> int:
         """
         Similar to `match_all()`, except only the minimum-cost mapping is saved out of all
@@ -579,7 +601,7 @@ class VF2Q(metaclass=VF2QMeta):
                 if self._covg2.is_mapped(node2):
                     continue
                 
-                priority2 = self._centrality2[node2]
+                priority2 = self._cent2[node2]
                 if self._prev_gmap:
                     cc_end_idx = [i for i in self._cc_end_idxs if i >= depth][0]
                     cc_dist_sum = 0
@@ -596,7 +618,7 @@ class VF2Q(metaclass=VF2QMeta):
                 if not self._covg2.is_unmapped_neighbor(node2):
                     continue
                 
-                priority2 = self._G2.degree(node2)
+                priority2 = self._deg2[node2]
                 node1 = self._qmap[self._node_order[depth]]
                 if self._prev_gmap and self._prev_gmap[node1] != node2:
                     priority2 += self._w2 * self._dist2[self._prev_gmap[node1]][node2]                

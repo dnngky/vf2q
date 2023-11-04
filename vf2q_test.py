@@ -289,8 +289,8 @@ def test_all(
 
 if __name__ == "__main__":
 
-    VF2Q.archgraph = sycamore54()
-    path = "./benchmark/20Q_depth_Tokyo/"
+    VF2Q.archgraph = rochester()
+    path = "./benchmark/53Q_depth_Rochester/"
 
     # test_match(
     #     path,
@@ -322,6 +322,6 @@ if __name__ == "__main__":
         path,
         max_iter=20,
         max_calls=2000,
-        w1=200,
-        w2=200
+        w1=1,
+        w2=1
     )

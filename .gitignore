@@ -3,3 +3,8 @@ benchmark/
 ag_old.py
 vfsexp.py
 vf2test.py
+vf2q_data.csv
+smt_demo.ipynb
+smt_mapping_checker.py
+smt_heuristic_swap.py
+z3_v_ats.ipynb
